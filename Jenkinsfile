@@ -39,7 +39,7 @@ pipeline {
             git commit -m "dev: bump image tag to ${TAG}" || true
 
             git remote set-url origin https://jwahn2018-rgb:${GIT_PAT}@github.com/jwahn2018-rgb/5x5y-shop.git
-            git push origin main
+            git push origin HEAD:main
           '''
         }
       }
