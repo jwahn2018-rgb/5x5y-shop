@@ -17,9 +17,9 @@ pipeline {
           usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT')]) {
           sh '''
             set -eux
-            buildah login ghcr.io -u "$GH_USER" -p "$GH_PAT"
-            buildah bud -f Containerfile -t "$IMAGE:$TAG" .
-            buildah push "$IMAGE:$TAG"
+            sudo buildah login ghcr.io -u "$GH_USER" -p "$GH_PAT"
+            sudo buildah bud -f Containerfile -t "$IMAGE:$TAG" .
+            sudo buildah push "$IMAGE:$TAG"
           '''
         }
       }
