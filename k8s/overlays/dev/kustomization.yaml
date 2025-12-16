@@ -1,0 +1,8 @@
+namespace: dev
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/jwahn2018-rgb/5x5y-shop
+    newName: ghcr.io/jwahn2018-rgb/5x5y-shop
+    newTag: latest
