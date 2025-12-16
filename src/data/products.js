@@ -1,7 +1,7 @@
 export const products = [
   {
     id: "p001",
-    name: "Sculpted Blazer",
+    name: "I want to go home",
     price: 179000,
     category: "Outer",
     color: "Black",
@@ -15,7 +15,7 @@ export const products = [
   },
   {
     id: "p002",
-    name: "Minimal Knit Top",
+    name: "I want to go home",
     price: 69000,
     category: "Top",
     color: "Ivory",
