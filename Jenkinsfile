@@ -45,7 +45,7 @@ pipeline {
                             git config user.name "Jenkins"
                             git add k8s/deployment.yaml
                             git commit -m "Update image to ${imageTag}"
-                            git push https://jwahn2018-rgb:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:main
+                            git push https://jwahn2018-rgb:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
                         """
                     }
                 }
