@@ -54,6 +54,11 @@ export const getCategoryBySlug = async (slug) => {
   return response.data
 }
 
+export const createCategory = async (name) => {
+  const response = await api.post('/categories', { name })
+  return response.data
+}
+
 // 장바구니 관련 API
 export const getCart = async () => {
   const response = await api.get('/cart')
