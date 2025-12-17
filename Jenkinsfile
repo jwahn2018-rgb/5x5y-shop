@@ -25,7 +25,7 @@ pipeline {
       }
     }
 
-    stage('Bump kustomize tag & push') {
+    stage('Update deployment & push') {
       steps {
         withCredentials([string(credentialsId: 'github-push', variable: 'GIT_PAT')]) {
           sh '''
@@ -33,9 +33,9 @@ pipeline {
             git config user.name "jenkins"
             git config user.email "jenkins@local"
 
-            sed -i "s/^\\s*newTag:.*$/  newTag: ${TAG}/" k8s/overlays/dev/kustomization.yaml
+            sed -i "s|image: ghcr.io/jwahn2018-rgb/5x5y-shop:.*|image: ghcr.io/jwahn2018-rgb/5x5y-shop:${TAG}|" k8s/deployment.yaml
 
-            git add k8s/overlays/dev/kustomization.yaml
+            git add k8s/deployment.yaml
             git commit -m "dev: bump image tag to ${TAG}" || true
 
             git remote set-url origin https://jwahn2018-rgb:${GIT_PAT}@github.com/jwahn2018-rgb/5x5y-shop.git
