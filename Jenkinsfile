@@ -26,7 +26,7 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+                    withCredentials([usernamePassword(credentialsId: 'ghcr-cred', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
                         sh "echo ${GHCR_TOKEN} | sudo buildah login -u ${GHCR_USER} --password-stdin ghcr.io"
                         sh "sudo buildah push ${imageTag}"
                     }
