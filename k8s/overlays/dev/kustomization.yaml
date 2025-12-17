@@ -5,4 +5,4 @@ resources:
 images:
   - name: ghcr.io/jwahn2018-rgb/5x5y-shop
     newName: ghcr.io/jwahn2018-rgb/5x5y-shop
-    newTag: 0e1d380759ec6445eab6f57a3b01a3a929a0f3e8
+    newTag: 3a650d05784585c11c95ac798d6ece199a1d0709
