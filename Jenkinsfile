@@ -38,7 +38,7 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                    withCredentials([usernamePassword(credentialsId: 'github-push', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                         sh """
                             sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/deployment.yaml
                             git config user.email "jenkins@example.com"
