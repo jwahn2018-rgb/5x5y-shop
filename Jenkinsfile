@@ -1,48 +1,56 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    IMAGE = "ghcr.io/jwahn2018-rgb/5x5y-shop"
-    TAG   = "${env.GIT_COMMIT}"
-  }
-
-  stages {
-    stage('Checkout') {
-      steps { checkout scm }
+    environment {
+        GITHUB_REPO = 'jwahn2018-rgb/5x5y-shop'
+        IMAGE_NAME = 'ghcr.io/jwahn2018-rgb/5x5y-shop'
     }
 
-    stage('Build & Push (buildah)') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'ghcr-cred',
-          usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT')]) {
-          sh '''
-            set -eux
-            sudo buildah login ghcr.io -u "$GH_USER" -p "$GH_PAT"
-            sudo buildah bud -f Containerfile -t "$IMAGE:$TAG" .
-            sudo buildah push "$IMAGE:$TAG"
-          '''
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
         }
-      }
-    }
 
-    stage('Update deployment & push') {
-      steps {
-        withCredentials([string(credentialsId: 'github-push', variable: 'GIT_PAT')]) {
-          sh '''
-            set -eux
-            git config user.name "jenkins"
-            git config user.email "jenkins@local"
-
-            sed -i "s|image: ghcr.io/jwahn2018-rgb/5x5y-shop:.*|image: ghcr.io/jwahn2018-rgb/5x5y-shop:${TAG}|" k8s/deployment.yaml
-
-            git add k8s/deployment.yaml
-            git commit -m "dev: bump image tag to ${TAG}" || true
-
-            git remote set-url origin https://jwahn2018-rgb:${GIT_PAT}@github.com/jwahn2018-rgb/5x5y-shop.git
-            git push origin HEAD:main
-          '''
+        stage('Build Image') {
+            steps {
+                script {
+                    def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
+                    sh "buildah bud -t ${imageTag} -f Containerfile ."
+                }
+            }
         }
-      }
+
+        stage('Push Image') {
+            steps {
+                script {
+                    def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
+                    withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+                        sh "echo ${GHCR_TOKEN} | buildah login -u ${GHCR_USER} --password-stdin ghcr.io"
+                        sh "buildah push ${imageTag}"
+                    }
+                }
+            }
+        }
+
+        stage('Update deployment & push') {
+            steps {
+                script {
+                    def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
+                    withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                        sh """
+                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/deployment.yaml
+                            git config user.email "jenkins@example.com"
+                            git config user.name "Jenkins"
+                            git add k8s/deployment.yaml
+                            git commit -m "Update image to ${imageTag}"
+                            git push https://${GIT_USER}:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:main
+                        """
+                    }
+                }
+            }
+        }
     }
-  }
 }
+
