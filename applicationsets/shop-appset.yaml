@@ -32,11 +32,10 @@ spec:
         path: "{{path}}"
 
       destination:
-        {{- if .clusterName }}
         name: "{{clusterName}}"
-        {{- else }}
+        
         server: "{{server}}"
-        {{- end }}
+        
         namespace: shop
 
       syncPolicy:
@@ -45,6 +44,7 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+
 
 
 
