@@ -9,7 +9,7 @@ spec:
         elements:
           # on-prem
           - name: shop-onprem
-            server: https://kubernetes.default.svc
+            clusterName: in-cluster
             path: k8s/overlays/onprem
 
           # EKS
@@ -32,10 +32,7 @@ spec:
         path: "{{path}}"
 
       destination:
-        name: "{{clusterName}}"
-        
-        server: "{{server}}"
-        
+        name: "{{clusterName}}"        
         namespace: shop
 
       syncPolicy:
@@ -44,6 +41,7 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+
 
 
 
