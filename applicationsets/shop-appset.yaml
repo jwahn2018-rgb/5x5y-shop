@@ -28,7 +28,7 @@ spec:
 
       source:
         repoURL: https://github.com/jwahn2018-rgb/5x5y-shop
-        targetRevision: main
+        targetRevision: gill-test
         path: "{{path}}"
 
       destination:
@@ -41,3 +41,4 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+
