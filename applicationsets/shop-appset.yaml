@@ -14,7 +14,7 @@ spec:
 
           # EKS
           - name: shop-eks
-            server: https://F70628B4EB910B9F45BF46A3DAB07A3.gr7.ap-northeast-2.eks.amazonaws.com
+            clusterName: arn:aws:eks:ap-northeast-2:004932907894:cluster/usinsa-cluster
             path: k8s/overlays/eks
 
   template:
@@ -32,8 +32,12 @@ spec:
         path: "{{path}}"
 
       destination:
-        server: "{{server}}"
-        namespace: shop
+  {{- if .clusterName }}
+  name: "{{clusterName}}"
+  {{- else }}
+  server: "{{server}}"
+  {{- end }}
+  namespace: shop
 
       syncPolicy:
         automated:
@@ -41,4 +45,5 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+
 
