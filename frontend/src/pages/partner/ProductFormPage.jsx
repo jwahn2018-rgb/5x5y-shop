@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { getCategories, createProduct, updateProduct, getProduct, uploadImage } from '../../api'
+import { getCategories, createCategory, createProduct, updateProduct, getProduct, uploadImage } from '../../api'
 import SortableImageItem from '../../components/SortableImageItem'
 
 const ProductFormPage = () => {
@@ -28,6 +28,8 @@ const ProductFormPage = () => {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(false)
   const [uploadingImages, setUploadingImages] = useState({})
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [addingCategory, setAddingCategory] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -65,6 +67,22 @@ const ProductFormPage = () => {
       setCategories(data)
     } catch (error) {
       console.error('카테고리 로딩 실패:', error)
+    }
+  }
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return
+    
+    setAddingCategory(true)
+    try {
+      const newCategory = await createCategory(newCategoryName.trim())
+      setCategories([...categories, newCategory])
+      setFormData({ ...formData, category_id: newCategory.id })
+      setNewCategoryName('')
+    } catch (error) {
+      alert(error.response?.data?.error || '카테고리 추가에 실패했습니다.')
+    } finally {
+      setAddingCategory(false)
     }
   }
 
@@ -345,6 +363,26 @@ const ProductFormPage = () => {
                 ))}
               </select>
               {errors.category_id && <p className="text-red-400 text-sm mt-1">{errors.category_id}</p>}
+              
+              {/* 카테고리 추가 */}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  className="input flex-1"
+                  placeholder="새 카테고리 이름"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCategory}
+                  disabled={addingCategory || !newCategoryName.trim()}
+                  className="btn-secondary whitespace-nowrap"
+                >
+                  {addingCategory ? '추가 중...' : '+ 추가'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

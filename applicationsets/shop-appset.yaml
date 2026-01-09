@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: shop
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          # on-prem
+          - name: shop-onprem
+            clusterName: in-cluster
+            path: k8s/overlays/onprem
+
+          # EKS
+          - name: shop-eks
+            clusterName: arn:aws:eks:ap-northeast-2:004932907894:cluster/usinsa-cluster
+            path: k8s/overlays/eks
+
+  template:
+    metadata:
+      name: "{{name}}"
+      labels:
+        app: shop
+        managed-by: applicationset
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/jwahn2018-rgb/5x5y-shop
+        targetRevision: gill-test
+        path: "{{path}}"
+
+      destination:
+        name: "{{clusterName}}"        
+        namespace: shop
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+
+
+
+
+
