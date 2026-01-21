@@ -38,14 +38,18 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    withCredentials([string(credentialsId: 'github-push', variable: 'GIT_TOKEN')]) {
+                    // 변경점: 'github-push' 대신 이미 작동 확인된 'ghcr-cred' 사용
+                    // string(...) 대신 usernamePassword(...)를 사용하여 토큰만 변수에 담습니다.
+                    withCredentials([usernamePassword(credentialsId: 'ghcr-cred', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                         sh """
                             sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/base/deployment.yaml
                             git config user.email "jenkins@example.com"
                             git config user.name "Jenkins"
                             git add k8s/base/deployment.yaml
                             git commit -m "Update image to ${imageTag}"
-                            git push https://jwahn2018-rgb:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
+
+                            # 변경점: 사용자명도 변수(${GIT_USER})로 처리하여 더 안전하게 변경
+                            git push https://${GIT_USER}:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
                         """
                     }
                 }
