@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import dotenv from 'dotenv'
+// dotenv.config() 제거 - Kubernetes Secret으로 환경변수 관리
 import productRoutes from './routes/products.js'
 import cartRoutes from './routes/cart.js'
 import authRoutes from './routes/auth.js'
@@ -10,8 +10,6 @@ import shippingRoutes from './routes/shipping.js'
 import partnerRoutes from './routes/partner.js'
 import uploadRoutes from './routes/upload.js'
 import path from 'path'
-
-dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 5000

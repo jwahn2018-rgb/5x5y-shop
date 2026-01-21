@@ -1,7 +1,5 @@
 import mysql from 'mysql2/promise'
-import dotenv from 'dotenv'
-
-dotenv.config()
+// dotenv.config() 제거 - Kubernetes Secret으로 환경변수 관리
 
 // 환경변수에서 읽기/쓰기 호스트 가져오기
 const getReadHosts = () => {
@@ -47,7 +45,10 @@ const getConnectionConfig = (host, port) => ({
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  connectTimeout: 10000, // 10초 연결 타임아웃
+  acquireTimeout: 10000, // 10초 연결 획득 타임아웃
+  timeout: 30000 // 30초 쿼리 타임아웃
 })
 
 // 읽기용 풀 생성 (로드밸런싱: 첫 번째 호스트 사용)
@@ -59,22 +60,29 @@ const readPool = mysql.createPool(getConnectionConfig(readHosts[0], getReadPort(
 const writeHost = getWriteHost()
 const writePool = mysql.createPool(getConnectionConfig(writeHost, getWritePort()))
 
-// 연결 테스트
-Promise.all([
-  readPool.getConnection().then(conn => { conn.release(); return 'read' }),
-  writePool.getConnection().then(conn => { conn.release(); return 'write' })
-])
-  .then(([read, write]) => {
-    console.log(`✅ Database connection successful! (read: ${read}, write: ${write})`)
-  })
-  .catch(error => {
-    console.error('❌ Database connection failed:', error.message)
-    console.error('Please check:')
-    console.error('1. SSH tunneling is running (ssh-tunnel.bat)')
-    console.error('2. .env file has correct DB settings')
-    console.error('3. MySQL server is running')
-    console.error('4. DB_READ_HOST and DB_WRITE_HOST are set correctly')
-  })
+// 연결 테스트를 비동기로 실행 (실패해도 애플리케이션은 계속 실행)
+// 실제 사용 시점에 연결 풀이 자동으로 재시도함
+const testConnections = async () => {
+  try {
+    const [readConn, writeConn] = await Promise.all([
+      readPool.getConnection(),
+      writePool.getConnection()
+    ])
+    readConn.release()
+    writeConn.release()
+    console.log(`✅ Database connection successful! (read: ${readHosts[0]}:${getReadPort()}, write: ${writeHost}:${getWritePort()})`)
+  } catch (error) {
+    console.error('❌ Database connection test failed:', error.message)
+    console.error('Connection will be retried on first use.')
+    // 연결 테스트 실패해도 애플리케이션은 계속 실행
+    // 실제 사용 시점에 연결 풀이 자동으로 재시도함
+  }
+}
+
+// 비동기로 연결 테스트 실행 (블로킹하지 않음)
+testConnections().catch(() => {
+  // 무시 - 연결 테스트 실패해도 애플리케이션은 계속 실행
+})
 
 // 쿼리가 읽기인지 쓰기인지 판단하는 헬퍼 함수
 export const isReadQuery = (sql) => {
