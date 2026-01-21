@@ -1,4 +1,4 @@
-import pool from '../config/database.js'
+import { readPool, writePool } from '../config/database.js'
 import bcrypt from 'bcryptjs'
 
 // 비밀번호 변경
@@ -16,7 +16,7 @@ export const changePassword = async (req, res) => {
     }
 
     // 현재 비밀번호 확인
-    const [users] = await pool.execute(
+    const [users] = await readPool.execute(
       'SELECT password FROM users WHERE id = ?',
       [userId]
     )
@@ -35,7 +35,7 @@ export const changePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10)
 
     // 비밀번호 업데이트
-    await pool.execute(
+    await writePool.execute(
       'UPDATE users SET password = ? WHERE id = ?',
       [hashedPassword, userId]
     )
@@ -53,13 +53,13 @@ export const updateProfile = async (req, res) => {
     const userId = req.user.id
     const { name, phone } = req.body
 
-    await pool.execute(
+    await writePool.execute(
       'UPDATE users SET name = ?, phone = ? WHERE id = ?',
       [name, phone, userId]
     )
 
     // 업데이트된 사용자 정보 가져오기
-    const [users] = await pool.execute(
+    const [users] = await readPool.execute(
       'SELECT id, email, name, phone, role FROM users WHERE id = ?',
       [userId]
     )

@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-deployment
+  namespace: shop
+  labels:
+    app: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      serviceAccountName: shop-serviceaccount
+      containers:
+      - name: shop
+        image: ghcr.io/jwahn2018-rgb/5x5y-shop:51
+        ports:
+        - containerPort: 5000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "5000"
+        - name: DB_READ_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: read-port
+        - name: DB_WRITE_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: write-port
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: password
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: database
+        - name: DB_READ_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: read-host
+        - name: DB_WRITE_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: write-host
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: jwt-secret
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: aws-region
+        - name: S3_BUCKET_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: s3-bucket-name
+        - name: CLOUDFRONT_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: cloudfront-domain
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: aws-access-key-id
+              optional: true
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: aws-secret-access-key
+              optional: true
+        - name: CORS_ORIGIN
+          value: "https://usinsa.minn.my"
+        - name: PRESIGNED_URL_EXPIRES_IN
+          value: "300"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-service
+  namespace: shop
+spec:
+  selector:
+    app: shop
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+  type: ClusterIP
+
+
+  

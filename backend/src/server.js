@@ -9,7 +9,6 @@ import userRoutes from './routes/user.js'
 import shippingRoutes from './routes/shipping.js'
 import partnerRoutes from './routes/partner.js'
 import uploadRoutes from './routes/upload.js'
-import { getUploadPath } from './config/upload.js'
 import path from 'path'
 
 dotenv.config()
@@ -25,11 +24,8 @@ app.use(cors({
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// 정적 파일 서빙 (업로드된 이미지)
-// 이미지 경로: /uploads/images/{partner_id}/{product_id}/{filename}
-app.use('/uploads/images', express.static(path.join(getUploadPath(), 'images')))
-// 임시 파일 경로: /uploads/temp/{filename}
-app.use('/uploads/temp', express.static(path.join(getUploadPath(), 'temp')))
+// 정적 파일 서빙 제거 (S3/CloudFront 사용)
+// 이미지는 CloudFront를 통해 제공됨
 
 // Routes
 app.use('/api/products', productRoutes)
@@ -52,7 +48,7 @@ if (process.env.NODE_ENV === 'production') {
   
   // SPA fallback - API 외 모든 요청은 index.html로
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
+    if (req.path.startsWith('/api/')) {
       return next()
     }
     res.sendFile(path.join(process.cwd(), 'public', 'index.html'))

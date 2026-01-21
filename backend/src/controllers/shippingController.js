@@ -1,11 +1,11 @@
-import pool from '../config/database.js'
+import { readPool, writePool, getTransactionConnection } from '../config/database.js'
 
 // 배송지 목록 조회
 export const getShippingAddresses = async (req, res) => {
   try {
     const userId = req.user.id
 
-    const [addresses] = await pool.execute(`
+    const [addresses] = await readPool.execute(`
       SELECT * FROM shipping_addresses 
       WHERE user_id = ? 
       ORDER BY is_default DESC, created_at DESC
@@ -24,7 +24,7 @@ export const addShippingAddress = async (req, res) => {
     const userId = req.user.id
     const { name, phone, address, postal_code, is_default } = req.body
 
-    const connection = await pool.getConnection()
+    const connection = await getTransactionConnection()
     await connection.beginTransaction()
 
     try {
@@ -68,7 +68,7 @@ export const updateShippingAddress = async (req, res) => {
     const { name, phone, address, postal_code, is_default } = req.body
 
     // 배송지 소유권 확인
-    const [addresses] = await pool.execute(
+    const [addresses] = await readPool.execute(
       'SELECT id FROM shipping_addresses WHERE id = ? AND user_id = ?',
       [id, userId]
     )
@@ -77,7 +77,7 @@ export const updateShippingAddress = async (req, res) => {
       return res.status(404).json({ error: 'Shipping address not found' })
     }
 
-    const connection = await pool.getConnection()
+    const connection = await getTransactionConnection()
     await connection.beginTransaction()
 
     try {
@@ -118,7 +118,7 @@ export const deleteShippingAddress = async (req, res) => {
     const { id } = req.params
 
     // 배송지 소유권 확인
-    const [addresses] = await pool.execute(
+    const [addresses] = await readPool.execute(
       'SELECT id FROM shipping_addresses WHERE id = ? AND user_id = ?',
       [id, userId]
     )
@@ -127,7 +127,7 @@ export const deleteShippingAddress = async (req, res) => {
       return res.status(404).json({ error: 'Shipping address not found' })
     }
 
-    await pool.execute(
+    await writePool.execute(
       'DELETE FROM shipping_addresses WHERE id = ? AND user_id = ?',
       [id, userId]
     )

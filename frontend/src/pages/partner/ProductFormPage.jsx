@@ -142,15 +142,18 @@ const ProductFormPage = () => {
     setUploadingImages(prev => ({ ...prev, [index]: true }))
     
     try {
-      const response = await uploadImage(file)
-      // tempFilename 저장
+      // 상품 생성 전이므로 productId는 undefined (백엔드에서 0 사용)
+      const productId = isEdit ? parseInt(id) : undefined
+      const response = await uploadImage(file, productId)
+      
+      // S3 key 저장 (tempFilename 대신 key 사용)
       const newTempFilenames = [...tempFilenames]
-      newTempFilenames[index] = response.tempFilename
+      newTempFilenames[index] = response.key
       setTempFilenames(newTempFilenames)
       
-      // 미리보기용 임시 URL 저장
+      // 미리보기용 URL 저장 (CloudFront URL)
       const newUrls = [...imageUrls]
-      newUrls[index] = response.tempUrl
+      newUrls[index] = response.url
       setImageUrls(newUrls)
       
       // 업로드 완료 후 파일 제거
@@ -217,8 +220,8 @@ const ProductFormPage = () => {
       newErrors.category_id = '카테고리를 선택하세요'
     }
     
-    // 이미지 검증: 업로드 완료된 이미지 또는 기존 이미지가 있어야 함
-    const hasImages = tempFilenames.some(fn => fn) || imageUrls.some(url => url && !url.includes('/temp/'))
+    // 이미지 검증: 업로드 완료된 이미지(S3 key) 또는 기존 이미지(URL)가 있어야 함
+    const hasImages = tempFilenames.some(fn => fn) || imageUrls.some(url => url && url.startsWith('https://'))
     if (!hasImages) {
       newErrors.images = '최소 1개 이상의 이미지가 필요합니다'
     }
@@ -240,13 +243,16 @@ const ProductFormPage = () => {
       for (let i = 0; i < imageFiles.length; i++) {
         if (imageFiles[i] && !tempFilenames[i]) {
           try {
-            const response = await uploadImage(imageFiles[i])
+            // 상품 생성 전이므로 productId는 undefined (백엔드에서 0 사용)
+            const productId = isEdit ? parseInt(id) : undefined
+            const response = await uploadImage(imageFiles[i], productId)
+            
             const newTempFilenames = [...tempFilenames]
-            newTempFilenames[i] = response.tempFilename
+            newTempFilenames[i] = response.key // S3 key 저장
             setTempFilenames(newTempFilenames)
             
             const newUrls = [...imageUrls]
-            newUrls[i] = response.tempUrl
+            newUrls[i] = response.url // CloudFront URL 저장
             setImageUrls(newUrls)
             
             const newFiles = [...imageFiles]
@@ -258,17 +264,17 @@ const ProductFormPage = () => {
         }
       }
 
-      // 이미지 배열 생성: tempFilename 또는 기존 URL
+      // 이미지 배열 생성: S3 key 또는 기존 URL
       const images = []
       for (let i = 0; i < Math.max(imageUrls.length, tempFilenames.length); i++) {
         if (tempFilenames[i]) {
-          // 새로 업로드된 이미지 (tempFilename 전송)
+          // 새로 업로드된 이미지 (S3 key 전송)
           images.push({
-            tempFilename: tempFilenames[i],
+            key: tempFilenames[i], // S3 key
             display_order: images.length,
             is_primary: images.length === 0
           })
-        } else if (imageUrls[i]) {
+        } else if (imageUrls[i] && !imageUrls[i].includes('/temp/')) {
           // 기존 이미지 (수정 시, URL 전송)
           images.push({
             url: imageUrls[i],
@@ -349,13 +355,26 @@ const ProductFormPage = () => {
               <label className="block text-sm font-medium text-white mb-1">
                 카테고리 <span className="text-red-400">*</span>
               </label>
+
+              {/* 카테고리가 없을 때 안내 메시지 */}
+              {categories.length === 0 && (
+                <div className="mb-3 p-4 bg-yellow-900/30 border border-yellow-600 rounded-lg">
+                  <p className="text-yellow-400 text-sm">
+                    등록된 카테고리가 없습니다. 아래에서 새 카테고리를 추가해주세요.
+                  </p>
+                </div>
+              )}
+
               <select
                 required
                 className={`input ${errors.category_id ? 'border-red-500' : ''}`}
                 value={formData.category_id}
                 onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                disabled={categories.length === 0}
               >
-                <option value="">카테고리를 선택하세요</option>
+                <option value="">
+                  {categories.length === 0 ? '카테고리를 먼저 추가하세요' : '카테고리를 선택하세요'}
+                </option>
                 {categories.map(category => (
                   <option key={category.id} value={category.id}>
                     {category.name}
@@ -363,25 +382,28 @@ const ProductFormPage = () => {
                 ))}
               </select>
               {errors.category_id && <p className="text-red-400 text-sm mt-1">{errors.category_id}</p>}
-              
+
               {/* 카테고리 추가 */}
-              <div className="mt-3 flex gap-2">
-                <input
-                  type="text"
-                  className="input flex-1"
-                  placeholder="새 카테고리 이름"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
-                />
-                <button
-                  type="button"
-                  onClick={handleAddCategory}
-                  disabled={addingCategory || !newCategoryName.trim()}
-                  className="btn-secondary whitespace-nowrap"
-                >
-                  {addingCategory ? '추가 중...' : '+ 추가'}
-                </button>
+              <div className="mt-3 p-4 bg-dark-200 rounded-lg border border-dark-300">
+                <p className="text-sm text-gray-400 mb-2">새 카테고리 추가</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="input flex-1"
+                    placeholder="카테고리 이름 입력 (예: 상의, 하의, 액세서리)"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={addingCategory || !newCategoryName.trim()}
+                    className="btn-primary whitespace-nowrap"
+                  >
+                    {addingCategory ? '추가 중...' : '+ 추가'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

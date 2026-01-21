@@ -1,0 +1,35 @@
+variable "region" {
+  type    = string
+  default = "ap-northeast-2"
+}
+
+variable "cluster_name" {
+  type = string
+}
+
+variable "namespace" {
+  type    = string
+  default = "logging"
+}
+
+variable "fluentd_host" {
+  type    = string
+  default = "10.255.255.1"
+}
+
+variable "fluentd_port" {
+  type    = number
+  default = 24225
+}
+
+# 태그는 중앙 Fluentd match 규칙과 맞추기 위해 변수로 뺌
+variable "forward_tag" {
+  type    = string
+  default = "kube.test"
+}
+
+# 차트 버전은 고정 추천 (운영 안정성)
+variable "fluent_bit_chart_version" {
+  type    = string
+  default = "0.46.10"
+}

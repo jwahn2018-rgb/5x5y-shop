@@ -1,0 +1,11 @@
+variable "node_ips" {
+  type = list(string)
+}
+
+variable "ksm_nodeport" {
+  default = 31892
+}
+
+variable "remote_write_url" {
+  default = "http://10.255.255.1:9090/api/v1/write"
+}
