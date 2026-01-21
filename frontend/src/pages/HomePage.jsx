@@ -1,25 +1,53 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { getRandomProducts } from '../api'
+import { getRandomProducts, searchProducts } from '../api'
 
 const HomePage = () => {
+  const [searchParams] = useSearchParams()
+  const searchQuery = searchParams.get('search')
+
   const [products, setProducts] = useState([])
+  const [randomProducts, setRandomProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isSearchMode, setIsSearchMode] = useState(false)
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchRandomOnce = async () => {
+      if (randomProducts.length === 0) {
+        try {
+          const data = await getRandomProducts()
+          setRandomProducts(data)
+        } catch (error) {
+          console.error('랜덤 상품 로딩 실패:', error)
+        }
+      }
+    }
+    fetchRandomOnce()
+  }, [])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
       try {
-        const data = await getRandomProducts()
-        setProducts(data)
+        if (searchQuery) {
+          setIsSearchMode(true)
+          const searchResults = await searchProducts(searchQuery)
+          setProducts(searchResults)
+        } else {
+          setIsSearchMode(false)
+          const data = await getRandomProducts()
+          setProducts(data)
+          setRandomProducts(data)
+        }
       } catch (error) {
         console.error('상품 로딩 실패:', error)
       } finally {
         setLoading(false)
       }
     }
-    fetchProducts()
-  }, [])
+    fetchData()
+  }, [searchQuery])
 
   if (loading) {
     return (
@@ -46,51 +74,111 @@ const HomePage = () => {
         </div>
       </motion.div>
 
-      {/* Random Products */}
+      {/* Search Results or Random Products */}
       <section>
-        <h2 className="text-3xl font-bold text-white mb-8">추천 상품</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {products.map((product, index) => (
-            <motion.div
-              key={product.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <Link to={`/product/${product.id}`} className="card p-4 block">
-                <div className="aspect-square bg-dark-200 rounded-lg mb-4 overflow-hidden">
-                  <img
-                    src={product.image_url || '/placeholder.jpg'}
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <h3 className="font-semibold text-white mb-2 line-clamp-2">
-                  {product.name}
-                </h3>
-                <div className="flex items-center justify-between">
-                  <div>
-                    {product.discount_price ? (
-                      <>
+        <h2 className="text-3xl font-bold text-white mb-8">
+          {isSearchMode ? `"${searchQuery}" 검색 결과` : '추천 상품'}
+        </h2>
+
+        {products.length === 0 && isSearchMode ? (
+          <div className="text-center py-12">
+            <p className="text-gray-400 text-lg">검색 결과가 없습니다.</p>
+            <Link to="/" className="text-primary-400 hover:underline mt-4 inline-block">
+              홈으로 돌아가기
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {products.map((product, index) => (
+              <motion.div
+                key={product.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <Link to={`/product/${product.id}`} className="card p-4 block">
+                  <div className="aspect-square bg-dark-200 rounded-lg mb-4 overflow-hidden">
+                    <img
+                      src={product.image_url || '/placeholder.jpg'}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2 line-clamp-2">
+                    {product.name}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {product.discount_price ? (
+                        <>
+                          <span className="text-lg font-bold text-white">
+                            {product.discount_price.toLocaleString()}원
+                          </span>
+                          <span className="text-sm text-gray-500 line-through ml-2">
+                            {product.price.toLocaleString()}원
+                          </span>
+                        </>
+                      ) : (
                         <span className="text-lg font-bold text-white">
-                          {product.discount_price.toLocaleString()}원
-                        </span>
-                        <span className="text-sm text-gray-500 line-through ml-2">
                           {product.price.toLocaleString()}원
                         </span>
-                      </>
-                    ) : (
-                      <span className="text-lg font-bold text-white">
-                        {product.price.toLocaleString()}원
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </section>
+
+      {/* Random Products Section (shown when in search mode) */}
+      {isSearchMode && randomProducts.length > 0 && (
+        <section className="mt-16">
+          <h2 className="text-3xl font-bold text-white mb-8">추천 상품</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {randomProducts.map((product, index) => (
+              <motion.div
+                key={product.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <Link to={`/product/${product.id}`} className="card p-4 block">
+                  <div className="aspect-square bg-dark-200 rounded-lg mb-4 overflow-hidden">
+                    <img
+                      src={product.image_url || '/placeholder.jpg'}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2 line-clamp-2">
+                    {product.name}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {product.discount_price ? (
+                        <>
+                          <span className="text-lg font-bold text-white">
+                            {product.discount_price.toLocaleString()}원
+                          </span>
+                          <span className="text-sm text-gray-500 line-through ml-2">
+                            {product.price.toLocaleString()}원
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-lg font-bold text-white">
+                          {product.price.toLocaleString()}원
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

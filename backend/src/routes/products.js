@@ -4,9 +4,9 @@ import { getRandomProducts, getProductById, searchProducts, getProductsByCategor
 const router = express.Router()
 
 router.get('/random', getRandomProducts)
-router.get('/:id', getProductById)
 router.get('/search', searchProducts)
 router.get('/category/:slug', getProductsByCategory)
+router.get('/:id', getProductById)
 
 export default router
 
