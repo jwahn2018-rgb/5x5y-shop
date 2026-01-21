@@ -3,6 +3,6 @@ kind: Kustomization
 
 resources:
   - ../../base
-patchesStrategicMerge:
-  - deployment-patch.yaml
-  - serviceaccount-patch.yaml
+patches:
+  - path: deployment-patch.yaml
+  - path: serviceaccount-patch.yaml
