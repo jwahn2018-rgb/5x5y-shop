@@ -157,8 +157,13 @@ const ProductFormPage = () => {
       if (allFiles.length > 0) {
         // 일괄 업로드
         setUploadingProgress(10)
-        uploadedResults = await uploadImages(allFiles, productId)
-        setUploadingProgress(50)
+        try {
+          uploadedResults = await uploadImages(allFiles, productId)
+          setUploadingProgress(50)
+        } catch (uploadError) {
+          console.error('이미지 업로드 실패:', uploadError)
+          throw new Error(`이미지 업로드 실패: ${uploadError.response?.data?.error || uploadError.message}`)
+        }
       }
       
       // 2. 이미지 배열 구성

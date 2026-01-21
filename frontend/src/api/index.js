@@ -230,6 +230,7 @@ export const uploadImage = async (file, productId = undefined) => {
 // productId는 선택사항 (상품 생성 전에는 undefined 또는 0)
 export const uploadImages = async (files, productId = undefined) => {
   // 1. Presigned URL 발급 (백엔드에서 partnerId 자동 찾음)
+  // getPresignedUploadUrls가 이미 File 객체를 변환하므로 그대로 전달
   const { images } = await getPresignedUploadUrls(productId, files)
   
   // 2. 모든 파일을 S3에 업로드
