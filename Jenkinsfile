@@ -34,18 +34,22 @@ pipeline {
             }
         }
 
-        stage('Update deployment & push') {
+       stage('Update deployment & push') {
             steps {
                 script {
                     def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    withCredentials([string(credentialsId: 'github-push', variable: 'GIT_TOKEN')]) {
+                    // 변경점: 'ghcr-cred'에서 토큰만 꺼내옵니다. (아이디는 안 씁니다)
+                    withCredentials([usernamePassword(credentialsId: 'ghcr-cred', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                         sh """
-                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/deployment.yaml
+                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/base/deployment.yaml
                             git config user.email "jenkins@example.com"
                             git config user.name "Jenkins"
-                            git add k8s/deployment.yaml
+                            git add k8s/base/deployment.yaml
                             git commit -m "Update image to ${imageTag}"
-                            git push https://jwahn2018-rgb:${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
+                            
+                            # [⭐️여기가 핵심] 아이디(jwahn2018-rgb)를 아예 빼버리고 토큰만 사용합니다.
+                            # GitHub는 토큰만 있으면 누군지 알아서 식별합니다.
+                            git push https://${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
                         """
                     }
                 }
