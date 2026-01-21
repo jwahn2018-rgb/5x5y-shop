@@ -38,17 +38,21 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    // 변경점: 'ghcr-cred'에서 토큰만 꺼내옵니다. (아이디는 안 씁니다)
+                    // 아이디 없이 토큰만 사용하는 방식 유지
                     withCredentials([usernamePassword(credentialsId: 'ghcr-cred', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                         sh """
+                            # [1] 파일 내용 수정 (경로: k8s/deployment.yaml) -> 이건 이미 잘 됨
                             sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/deployment.yaml
+                            
                             git config user.email "jenkins@example.com"
                             git config user.name "Jenkins"
-                            git add k8s/base/deployment.yaml
+                            
+                            # [⭐️수정할 부분] 여기 경로에서 'base/'를 지워야 합니다!
+                            git add k8s/deployment.yaml
+                            
                             git commit -m "Update image to ${imageTag}"
                             
-                            # [⭐️여기가 핵심] 아이디(jwahn2018-rgb)를 아예 빼버리고 토큰만 사용합니다.
-                            # GitHub는 토큰만 있으면 누군지 알아서 식별합니다.
+                            # 아이디 없이 토큰으로 푸시
                             git push https://${GIT_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:min-test
                         """
                     }
