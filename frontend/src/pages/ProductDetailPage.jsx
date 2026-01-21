@@ -225,23 +225,23 @@ const ProductDetailPage = () => {
               <span className="text-white">{product.partner_name || '알 수 없음'}</span>
             </div>
           </div>
-          
-          {/* 본문 이미지 영역 (is_primary = 0만) - 제품정보 하단 */}
-          {detailImages.length > 0 && (
-            <div className="mt-8 pt-8 border-t border-dark-600 space-y-4">
-              {detailImages.map((img, index) => (
-                <div key={img.id || index} className="w-full">
-                  <img
-                    src={img.image_url}
-                    alt={`${product.name} 상세 이미지 ${index + 1}`}
-                    className="w-full h-auto object-contain rounded-lg"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* 본문 이미지 영역 (is_primary = 0만) - 전체 폭 사용 */}
+      {detailImages.length > 0 && (
+        <div className="mt-8 pt-8 border-t border-dark-600 space-y-4">
+          {detailImages.map((img, index) => (
+            <div key={img.id || index} className="w-full">
+              <img
+                src={img.image_url}
+                alt={`${product.name} 상세 이미지 ${index + 1}`}
+                className="w-full h-auto object-contain rounded-lg"
+              />
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Related Products */}
       {relatedProducts.length > 0 && (

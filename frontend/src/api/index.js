@@ -181,7 +181,9 @@ export const getPresignedUploadUrls = async (productId, files) => {
   const response = await api.post('/upload/presigned/batch', {
     productId: productId || undefined, // undefined면 백엔드에서 0 사용
     files: files.map(file => ({
-      filename: file.name,
+      name: file.name,        // 백엔드가 file.name을 기대
+      type: file.type,        // 백엔드가 file.type을 기대
+      filename: file.name,    // 호환성을 위해 둘 다 전송
       contentType: file.type
     }))
   })
