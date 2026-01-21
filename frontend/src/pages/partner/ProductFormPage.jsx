@@ -1,24 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { getCategories, createCategory, createProduct, updateProduct, getProduct, uploadImage } from '../../api'
-import SortableImageItem from '../../components/SortableImageItem'
+import { getCategories, createCategory, createProduct, updateProduct, getProduct, uploadImages } from '../../api'
+import ImageUploadSection from '../../components/ImageUploadSection'
 
 const ProductFormPage = () => {
   const { id } = useParams()
@@ -27,7 +11,7 @@ const ProductFormPage = () => {
   
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(false)
-  const [uploadingImages, setUploadingImages] = useState({})
+  const [uploadingProgress, setUploadingProgress] = useState(0)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
   const [formData, setFormData] = useState({
@@ -38,21 +22,14 @@ const ProductFormPage = () => {
     stock: '',
     category_id: '',
     status: 'draft',
-    images: []
   })
   
-  const [imageFiles, setImageFiles] = useState([null]) // 선택된 파일들
-  const [imageUrls, setImageUrls] = useState(['']) // 업로드된 URL들 (수정 시 기존 이미지)
-  const [tempFilenames, setTempFilenames] = useState([null]) // 임시 파일명들 (업로드 후)
+  // 썸네일 이미지 (is_primary = 1)
+  const [thumbnailImages, setThumbnailImages] = useState([])
+  // 본문 이미지 (is_primary = 0)
+  const [detailImages, setDetailImages] = useState([])
+  
   const [errors, setErrors] = useState({})
-
-  // 드래그 앤 드롭 센서 설정
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  )
 
   useEffect(() => {
     fetchCategories()
@@ -97,17 +74,32 @@ const ProductFormPage = () => {
         stock: product.stock || '',
         category_id: product.category_id || '',
         status: product.status || 'draft',
-        images: product.images || []
       })
+      
       if (product.images && product.images.length > 0) {
-        setImageUrls(product.images.map(img => img.image_url))
-        setTempFilenames(new Array(product.images.length).fill(null)) // 기존 이미지는 tempFilename 없음
-        setImageFiles(new Array(product.images.length).fill(null)) // 기존 이미지는 파일 없음
-      } else {
-        // 이미지가 없으면 기본 필드 하나
-        setImageUrls([''])
-        setTempFilenames([null])
-        setImageFiles([null])
+        // 썸네일과 본문 이미지 분리
+        const thumbnails = product.images
+          .filter(img => img.is_primary)
+          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+          .map(img => ({
+            url: img.image_url,
+            filename: img.image_url.split('/').pop() || '이미지',
+            file: null,
+            isPrimary: true,
+          }))
+        
+        const details = product.images
+          .filter(img => !img.is_primary)
+          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+          .map(img => ({
+            url: img.image_url,
+            filename: img.image_url.split('/').pop() || '이미지',
+            file: null,
+            isPrimary: false,
+          }))
+        
+        setThumbnailImages(thumbnails)
+        setDetailImages(details)
       }
     } catch (error) {
       console.error('상품 로딩 실패:', error)
@@ -115,94 +107,6 @@ const ProductFormPage = () => {
       navigate('/partner')
     }
   }
-
-  const handleImageSelect = (index, file) => {
-    if (!file) return
-    
-    // 파일 타입 검증
-    if (!file.type.startsWith('image/')) {
-      alert('이미지 파일만 업로드 가능합니다.')
-      return
-    }
-    
-    // 파일 크기 검증 (10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('파일 크기는 10MB 이하여야 합니다.')
-      return
-    }
-
-    const newFiles = [...imageFiles]
-    newFiles[index] = file
-    setImageFiles(newFiles)
-  }
-
-  const handleImageUpload = async (index, file) => {
-    if (!file) return
-
-    setUploadingImages(prev => ({ ...prev, [index]: true }))
-    
-    try {
-      // 상품 생성 전이므로 productId는 undefined (백엔드에서 0 사용)
-      const productId = isEdit ? parseInt(id) : undefined
-      const response = await uploadImage(file, productId)
-      
-      // S3 key 저장 (tempFilename 대신 key 사용)
-      const newTempFilenames = [...tempFilenames]
-      newTempFilenames[index] = response.key
-      setTempFilenames(newTempFilenames)
-      
-      // 미리보기용 URL 저장 (CloudFront URL)
-      const newUrls = [...imageUrls]
-      newUrls[index] = response.url
-      setImageUrls(newUrls)
-      
-      // 업로드 완료 후 파일 제거
-      const newFiles = [...imageFiles]
-      newFiles[index] = null
-      setImageFiles(newFiles)
-    } catch (error) {
-      alert(error.response?.data?.error || '이미지 업로드에 실패했습니다.')
-    } finally {
-      setUploadingImages(prev => ({ ...prev, [index]: false }))
-    }
-  }
-
-  const addImageField = () => {
-    setImageUrls([...imageUrls, ''])
-    setImageFiles([...imageFiles, null])
-    setTempFilenames([...tempFilenames, null])
-  }
-
-  const removeImageField = (index) => {
-    if (imageUrls.length > 1 || imageFiles.length > 1) {
-      const newUrls = imageUrls.filter((_, i) => i !== index)
-      const newFiles = imageFiles.filter((_, i) => i !== index)
-      const newTempFilenames = tempFilenames.filter((_, i) => i !== index)
-      setImageUrls(newUrls)
-      setImageFiles(newFiles)
-      setTempFilenames(newTempFilenames)
-    }
-  }
-
-  // 드래그 앤 드롭 핸들러
-  const handleDragEnd = (event) => {
-    const { active, over } = event
-
-    if (over && active.id !== over.id) {
-      const oldIndex = parseInt(active.id)
-      const newIndex = parseInt(over.id)
-
-      // 배열 재정렬
-      setImageUrls(arrayMove(imageUrls, oldIndex, newIndex))
-      setImageFiles(arrayMove(imageFiles, oldIndex, newIndex))
-      setTempFilenames(arrayMove(tempFilenames, oldIndex, newIndex))
-    }
-  }
-
-  // 이미지 항목 ID 배열 생성
-  const imageItemIds = Array.from({ 
-    length: Math.max(imageUrls.length, imageFiles.length, 1) 
-  }).map((_, i) => String(i))
 
   const validateForm = () => {
     const newErrors = {}
@@ -220,10 +124,10 @@ const ProductFormPage = () => {
       newErrors.category_id = '카테고리를 선택하세요'
     }
     
-    // 이미지 검증: 업로드 완료된 이미지(S3 key) 또는 기존 이미지(URL)가 있어야 함
-    const hasImages = tempFilenames.some(fn => fn) || imageUrls.some(url => url && url.startsWith('https://'))
-    if (!hasImages) {
-      newErrors.images = '최소 1개 이상의 이미지가 필요합니다'
+    // 썸네일 이미지 최소 1개 필요
+    const hasThumbnails = thumbnailImages.length > 0
+    if (!hasThumbnails) {
+      newErrors.thumbnails = '최소 1개 이상의 썸네일 이미지가 필요합니다'
     }
     
     setErrors(newErrors)
@@ -238,51 +142,70 @@ const ProductFormPage = () => {
     }
 
     setLoading(true)
+    setUploadingProgress(0)
+    
     try {
-      // 먼저 아직 업로드하지 않은 파일들 업로드
-      for (let i = 0; i < imageFiles.length; i++) {
-        if (imageFiles[i] && !tempFilenames[i]) {
-          try {
-            // 상품 생성 전이므로 productId는 undefined (백엔드에서 0 사용)
-            const productId = isEdit ? parseInt(id) : undefined
-            const response = await uploadImage(imageFiles[i], productId)
-            
-            const newTempFilenames = [...tempFilenames]
-            newTempFilenames[i] = response.key // S3 key 저장
-            setTempFilenames(newTempFilenames)
-            
-            const newUrls = [...imageUrls]
-            newUrls[i] = response.url // CloudFront URL 저장
-            setImageUrls(newUrls)
-            
-            const newFiles = [...imageFiles]
-            newFiles[i] = null
-            setImageFiles(newFiles)
-          } catch (error) {
-            throw new Error(`이미지 ${i + 1} 업로드 실패: ${error.response?.data?.error || error.message}`)
-          }
-        }
+      const productId = isEdit ? parseInt(id) : undefined
+      
+      // 1. 새로 추가된 파일들만 업로드 (file이 있는 것들)
+      const thumbnailFiles = thumbnailImages.filter(img => img.file).map(img => img.file)
+      const detailFiles = detailImages.filter(img => img.file).map(img => img.file)
+      const allFiles = [...thumbnailFiles, ...detailFiles]
+      
+      let uploadedResults = []
+      
+      if (allFiles.length > 0) {
+        // 일괄 업로드
+        setUploadingProgress(10)
+        uploadedResults = await uploadImages(allFiles, productId)
+        setUploadingProgress(50)
       }
-
-      // 이미지 배열 생성: S3 key 또는 기존 URL
+      
+      // 2. 이미지 배열 구성
       const images = []
-      for (let i = 0; i < Math.max(imageUrls.length, tempFilenames.length); i++) {
-        if (tempFilenames[i]) {
-          // 새로 업로드된 이미지 (S3 key 전송)
+      let uploadIndex = 0
+      
+      // 썸네일 이미지 (is_primary = 1)
+      thumbnailImages.forEach((img, index) => {
+        if (img.file) {
+          // 새로 업로드된 이미지
           images.push({
-            key: tempFilenames[i], // S3 key
-            display_order: images.length,
-            is_primary: images.length === 0
+            key: uploadedResults[uploadIndex].key,
+            display_order: index,
+            is_primary: true,
           })
-        } else if (imageUrls[i] && !imageUrls[i].includes('/temp/')) {
-          // 기존 이미지 (수정 시, URL 전송)
+          uploadIndex++
+        } else if (img.url) {
+          // 기존 이미지
           images.push({
-            url: imageUrls[i],
-            display_order: images.length,
-            is_primary: images.length === 0
+            url: img.url,
+            display_order: index,
+            is_primary: true,
           })
         }
-      }
+      })
+      
+      // 본문 이미지 (is_primary = 0)
+      detailImages.forEach((img, index) => {
+        if (img.file) {
+          // 새로 업로드된 이미지
+          images.push({
+            key: uploadedResults[uploadIndex].key,
+            display_order: index,
+            is_primary: false,
+          })
+          uploadIndex++
+        } else if (img.url) {
+          // 기존 이미지
+          images.push({
+            url: img.url,
+            display_order: index,
+            is_primary: false,
+          })
+        }
+      })
+      
+      setUploadingProgress(80)
 
       const productData = {
         ...formData,
@@ -293,6 +216,8 @@ const ProductFormPage = () => {
         images
       }
 
+      setUploadingProgress(90)
+      
       if (isEdit) {
         await updateProduct(id, productData)
         alert('상품이 수정되었습니다.')
@@ -301,11 +226,13 @@ const ProductFormPage = () => {
         alert('상품이 등록되었습니다.')
       }
       
+      setUploadingProgress(100)
       navigate('/partner')
     } catch (error) {
       alert(error.message || error.response?.data?.error || '상품 저장에 실패했습니다.')
     } finally {
       setLoading(false)
+      setUploadingProgress(0)
     }
   }
 
@@ -356,7 +283,6 @@ const ProductFormPage = () => {
                 카테고리 <span className="text-red-400">*</span>
               </label>
 
-              {/* 카테고리가 없을 때 안내 메시지 */}
               {categories.length === 0 && (
                 <div className="mb-3 p-4 bg-yellow-900/30 border border-yellow-600 rounded-lg">
                   <p className="text-yellow-400 text-sm">
@@ -383,14 +309,13 @@ const ProductFormPage = () => {
               </select>
               {errors.category_id && <p className="text-red-400 text-sm mt-1">{errors.category_id}</p>}
 
-              {/* 카테고리 추가 */}
               <div className="mt-3 p-4 bg-dark-200 rounded-lg border border-dark-300">
                 <p className="text-sm text-gray-400 mb-2">새 카테고리 추가</p>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     className="input flex-1"
-                    placeholder="카테고리 이름 입력 (예: 상의, 하의, 액세서리)"
+                    placeholder="카테고리 이름 입력"
                     value={newCategoryName}
                     onChange={(e) => setNewCategoryName(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
@@ -495,57 +420,51 @@ const ProductFormPage = () => {
           </div>
         </div>
 
-        {/* 이미지 */}
+        {/* 이미지 업로드 - 썸네일 */}
         <div>
-          <h2 className="text-xl font-semibold text-white mb-4">상품 이미지</h2>
+          <h2 className="text-xl font-semibold text-white mb-4">썸네일 이미지</h2>
           <p className="text-sm text-gray-400 mb-4">
-            이미지를 선택하세요. 드래그하여 순서를 변경할 수 있습니다. 첫 번째 이미지가 대표 이미지(썸네일)로 사용됩니다.
+            상품 상세페이지 왼쪽 상단에 표시될 이미지입니다. 여러 장을 업로드하면 썸네일 목록으로 표시됩니다.
           </p>
-          
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={imageItemIds}
-              strategy={verticalListSortingStrategy}
-            >
-              {imageItemIds.map((itemId, index) => {
-                const url = imageUrls[index] || ''
-                const file = imageFiles[index]
-                const isUploading = uploadingImages[index]
-                const previewUrl = file ? URL.createObjectURL(file) : url
-
-                return (
-                  <SortableImageItem
-                    key={itemId}
-                    id={itemId}
-                    index={index}
-                    url={url}
-                    file={file}
-                    tempFilename={tempFilenames[index]}
-                    isUploading={isUploading}
-                    onFileSelect={handleImageSelect}
-                    onUpload={handleImageUpload}
-                    onRemove={removeImageField}
-                    previewUrl={previewUrl}
-                  />
-                )
-              })}
-            </SortableContext>
-          </DndContext>
-          
-          {errors.images && <p className="text-red-400 text-sm mt-1">{errors.images}</p>}
-          
-          <button
-            type="button"
-            onClick={addImageField}
-            className="btn-secondary mt-2"
-          >
-            + 이미지 추가
-          </button>
+          <ImageUploadSection
+            type="thumbnail"
+            label="썸네일 이미지 *"
+            images={thumbnailImages}
+            onImagesChange={setThumbnailImages}
+            errors={errors.thumbnails}
+          />
         </div>
+
+        {/* 이미지 업로드 - 본문 */}
+        <div>
+          <h2 className="text-xl font-semibold text-white mb-4">본문 이미지</h2>
+          <p className="text-sm text-gray-400 mb-4">
+            상품 상세페이지 본문 영역에 표시될 이미지입니다. 가로폭 전체로 세로로 이어져 표시됩니다.
+          </p>
+          <ImageUploadSection
+            type="detail"
+            label="본문 이미지"
+            images={detailImages}
+            onImagesChange={setDetailImages}
+            errors={errors.details}
+          />
+        </div>
+
+        {/* 업로드 진행률 */}
+        {loading && uploadingProgress > 0 && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm text-gray-400">
+              <span>이미지 업로드 중...</span>
+              <span>{uploadingProgress}%</span>
+            </div>
+            <div className="w-full bg-dark-600 rounded-full h-2">
+              <div
+                className="bg-white h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadingProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* 버튼 */}
         <div className="flex gap-4 pt-6 border-t">
@@ -560,6 +479,7 @@ const ProductFormPage = () => {
             type="button"
             onClick={() => navigate('/partner')}
             className="btn-secondary flex-1"
+            disabled={loading}
           >
             취소
           </button>

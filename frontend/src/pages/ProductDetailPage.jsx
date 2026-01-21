@@ -22,6 +22,14 @@ const ProductDetailPage = () => {
         const data = await getProduct(id)
         setProduct(data)
         
+        // 썸네일 이미지가 있으면 첫 번째 썸네일로 초기화
+        if (data.images && data.images.length > 0) {
+          const thumbnails = data.images.filter(img => img.is_primary)
+          if (thumbnails.length > 0) {
+            setSelectedImageIndex(0)
+          }
+        }
+        
         // 관련 상품 가져오기 (같은 카테고리)
         if (data.category_slug) {
           try {
@@ -85,34 +93,45 @@ const ProductDetailPage = () => {
     )
   }
 
-  const images = (product.images || []).sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-  const mainImage = images.find(img => img.is_primary) || images[0] || { image_url: '/placeholder.jpg' }
+  // 이미지 분리: is_primary = 1 (썸네일), is_primary = 0 (본문)
+  const thumbnailImages = (product.images || [])
+    .filter(img => img.is_primary)
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+  
+  const detailImages = (product.images || [])
+    .filter(img => !img.is_primary)
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+  
+  // 기본 선택 이미지 (첫 번째 썸네일)
+  const defaultImage = thumbnailImages[0] || { image_url: '/placeholder.jpg' }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-dark-50">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-        {/* Product Images */}
+        {/* Product Images - 썸네일 영역 (is_primary = 1만) */}
         <div>
-          <div className="bg-dark-200 rounded-2xl overflow-hidden mb-4 flex items-center justify-center w-[800px] min-h-[400px]">
+          <div className="bg-dark-200 rounded-2xl overflow-hidden mb-4 flex items-center justify-center aspect-square w-full">
             <img
-              src={images[selectedImageIndex]?.image_url || mainImage.image_url || '/placeholder.jpg'}
+              src={thumbnailImages[selectedImageIndex]?.image_url || defaultImage.image_url || '/placeholder.jpg'}
               alt={product.name}
-              className="max-w-[800px] w-auto h-auto object-contain"
+              className="w-full h-full object-contain"
             />
           </div>
-          {images.length > 1 && (
-            <div className="grid grid-cols-4 gap-2 max-w-[800px]">
-              {images.map((img, index) => (
+          {thumbnailImages.length > 1 && (
+            <div className="grid grid-cols-4 gap-2">
+              {thumbnailImages.map((img, index) => (
                 <button
                   key={img.id || index}
                   onClick={() => setSelectedImageIndex(index)}
-                  className={`aspect-square bg-dark-200 rounded-lg overflow-hidden border-2 ${
-                    selectedImageIndex === index ? 'border-white' : 'border-transparent'
+                  className={`relative aspect-square bg-dark-200 rounded-lg overflow-hidden border-2 transition-all ${
+                    selectedImageIndex === index 
+                      ? 'border-white scale-105' 
+                      : 'border-transparent hover:border-gray-500'
                   }`}
                 >
                   <img
                     src={img.image_url}
-                    alt={`${product.name} ${index + 1}`}
+                    alt={`${product.name} 썸네일 ${index + 1}`}
                     className="w-full h-full object-cover"
                   />
                 </button>
@@ -206,6 +225,21 @@ const ProductDetailPage = () => {
               <span className="text-white">{product.partner_name || '알 수 없음'}</span>
             </div>
           </div>
+          
+          {/* 본문 이미지 영역 (is_primary = 0만) - 제품정보 하단 */}
+          {detailImages.length > 0 && (
+            <div className="mt-8 pt-8 border-t border-dark-600 space-y-4">
+              {detailImages.map((img, index) => (
+                <div key={img.id || index} className="w-full">
+                  <img
+                    src={img.image_url}
+                    alt={`${product.name} 상세 이미지 ${index + 1}`}
+                    className="w-full h-auto object-contain rounded-lg"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
