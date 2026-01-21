@@ -41,7 +41,7 @@ pipeline {
                     // 변경점: 'ghcr-cred'에서 토큰만 꺼내옵니다. (아이디는 안 씁니다)
                     withCredentials([usernamePassword(credentialsId: 'ghcr-cred', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                         sh """
-                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/base/deployment.yaml
+                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${imageTag}|' k8s/deployment.yaml
                             git config user.email "jenkins@example.com"
                             git config user.name "Jenkins"
                             git add k8s/base/deployment.yaml
