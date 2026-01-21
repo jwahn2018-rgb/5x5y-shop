@@ -18,7 +18,7 @@ spec:
       serviceAccountName: shop-serviceaccount
       containers:
       - name: shop
-        image: ghcr.io/jwahn2018-rgb/5x5y-shop:51
+        image: ghcr.io/jwahn2018-rgb/5x5y-shop:63
         ports:
         - containerPort: 5000
         env:
