@@ -1,0 +1,14 @@
+locals {
+  prometheus_yml = templatefile(
+    "${path.module}/templates/prometheus.yml.tmpl",
+    {
+      node_ips         = var.node_ips
+      ksm_nodeport     = var.ksm_nodeport
+      remote_write_url = var.remote_write_url
+    }
+  )
+}
+
+output "prometheus_yml" {
+  value = local.prometheus_yml
+}

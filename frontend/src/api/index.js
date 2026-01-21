@@ -54,6 +54,11 @@ export const getCategoryBySlug = async (slug) => {
   return response.data
 }
 
+export const createCategory = async (name) => {
+  const response = await api.post('/categories', { name })
+  return response.data
+}
+
 // 장바구니 관련 API
 export const getCart = async () => {
   const response = await api.get('/cart')
@@ -159,31 +164,86 @@ export const getPartnerOrders = async () => {
   return response.data
 }
 
-// 이미지 업로드 API
-export const uploadImage = async (file) => {
-  const formData = new FormData()
-  formData.append('image', file)
-  
-  const response = await api.post('/upload/image', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+// Presigned URL 발급 (단일 이미지)
+// productId는 선택사항 (상품 생성 전에는 undefined)
+export const getPresignedUploadUrl = async (productId, filename, contentType) => {
+  const response = await api.post('/upload/presigned', {
+    productId: productId || undefined, // undefined면 백엔드에서 0 사용
+    filename,
+    contentType
   })
   return response.data
 }
 
-export const uploadImages = async (files) => {
-  const formData = new FormData()
-  files.forEach((file) => {
-    formData.append('images', file)
-  })
-  
-  const response = await api.post('/upload/images', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+// Presigned URL 발급 (다중 이미지)
+// productId는 선택사항 (상품 생성 전에는 undefined)
+export const getPresignedUploadUrls = async (productId, files) => {
+  const response = await api.post('/upload/presigned/batch', {
+    productId: productId || undefined, // undefined면 백엔드에서 0 사용
+    files: files.map(file => ({
+      filename: file.name,
+      contentType: file.type
+    }))
   })
   return response.data
+}
+
+// S3에 직접 업로드 (Presigned URL 사용)
+export const uploadToS3 = async (presignedUrl, file) => {
+  const response = await fetch(presignedUrl, {
+    method: 'PUT',
+    body: file,
+    headers: {
+      'Content-Type': file.type
+    }
+  })
+  
+  if (!response.ok) {
+    throw new Error(`S3 upload failed: ${response.statusText}`)
+  }
+  
+  return response
+}
+
+// 이미지 업로드 (Presigned URL 발급 + S3 업로드)
+// productId는 선택사항 (상품 생성 전에는 undefined 또는 0)
+export const uploadImage = async (file, productId = undefined) => {
+  // 1. Presigned URL 발급 (백엔드에서 partnerId 자동 찾음)
+  const { presignedUrl, key, url } = await getPresignedUploadUrl(
+    productId,
+    file.name,
+    file.type
+  )
+  
+  // 2. S3에 직접 업로드
+  await uploadToS3(presignedUrl, file)
+  
+  // 3. 결과 반환
+  return {
+    key,
+    url,
+    filename: file.name
+  }
+}
+
+// 다중 이미지 업로드
+// productId는 선택사항 (상품 생성 전에는 undefined 또는 0)
+export const uploadImages = async (files, productId = undefined) => {
+  // 1. Presigned URL 발급 (백엔드에서 partnerId 자동 찾음)
+  const { images } = await getPresignedUploadUrls(productId, files)
+  
+  // 2. 모든 파일을 S3에 업로드
+  const uploadPromises = files.map((file, index) => 
+    uploadToS3(images[index].presignedUrl, file)
+  )
+  
+  await Promise.all(uploadPromises)
+  
+  // 3. 결과 반환
+  return images.map(img => ({
+    key: img.key,
+    url: img.url
+  }))
 }
 
 // default export에 api도 포함

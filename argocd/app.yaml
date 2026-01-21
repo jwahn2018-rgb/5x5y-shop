@@ -7,13 +7,13 @@ spec:
   project: default
   
   source:
-    repoURL: https://github.com/your-username/your-repo.git
-    targetRevision: main
+    repoURL: https://github.com/jwahn2018-rgb/5x5y-shop
+    targetRevision: min-test
     path: k8s
-  
+
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: shop
   
   syncPolicy:
     automated:

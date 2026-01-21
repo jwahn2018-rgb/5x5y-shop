@@ -1,10 +1,10 @@
-import pool from '../config/database.js'
+import { readPool, writePool } from '../config/database.js'
 
 export const getCart = async (req, res) => {
   try {
     const userId = req.user.id
     
-    const [cartItems] = await pool.execute(`
+    const [cartItems] = await readPool.execute(`
       SELECT 
         c.id,
         c.quantity,
@@ -32,21 +32,21 @@ export const addToCart = async (req, res) => {
     const { productId, quantity } = req.body
     
     // 기존 장바구니에 있는지 확인
-    const [existing] = await pool.execute(`
+    const [existing] = await readPool.execute(`
       SELECT id, quantity FROM cart 
       WHERE user_id = ? AND product_id = ?
     `, [userId, productId])
     
     if (existing.length > 0) {
       // 수량 업데이트
-      await pool.execute(`
+      await writePool.execute(`
         UPDATE cart 
         SET quantity = quantity + ?
         WHERE id = ?
       `, [quantity || 1, existing[0].id])
     } else {
       // 새로 추가
-      await pool.execute(`
+      await writePool.execute(`
         INSERT INTO cart (user_id, product_id, quantity)
         VALUES (?, ?, ?)
       `, [userId, productId, quantity || 1])
@@ -64,7 +64,7 @@ export const removeFromCart = async (req, res) => {
     const userId = req.user.id
     const { productId } = req.params
     
-    await pool.execute(`
+    await writePool.execute(`
       DELETE FROM cart 
       WHERE user_id = ? AND product_id = ?
     `, [userId, productId])

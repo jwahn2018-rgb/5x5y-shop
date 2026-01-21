@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import pool from '../config/database.js'
+import { readPool } from '../config/database.js'
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -15,7 +15,7 @@ export const authenticate = async (req, res, next) => {
     )
     
     // 사용자 정보 가져오기
-    const [users] = await pool.execute(
+    const [users] = await readPool.execute(
       'SELECT id, email, name, role FROM users WHERE id = ?',
       [decoded.id]
     )

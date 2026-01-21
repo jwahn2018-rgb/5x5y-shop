@@ -1,0 +1,15 @@
+variable "aws_region" {
+  default = "ap-northeast-2"
+}
+
+variable "eks_cluster_name" {
+  type = string
+}
+
+variable "namespace" {
+  default = "monitoring"
+}
+
+variable "nodeport" {
+  default = 31892
+}

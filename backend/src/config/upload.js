@@ -1,96 +1,130 @@
-import multer from 'multer'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import fs from 'fs'
+import { S3Client } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { randomUUID } from 'crypto'
+import path from 'path'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+// AWS 설정
+const AWS_REGION = process.env.AWS_REGION || 'ap-northeast-2'
+const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || 'usinsa-shop-images'
+const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || 'img.usinsa.minn.my'
+const PRESIGNED_URL_EXPIRES_IN = parseInt(process.env.PRESIGNED_URL_EXPIRES_IN) || 300 // 5분 기본값
 
-// 업로드 디렉토리 설정 (NFS 마운트 경로 또는 로컬 경로)
-// 환경변수로 설정 가능, 기본값은 uploads 폴더
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads')
-const FILE_SERVER_URL = process.env.FILE_SERVER_URL || 'http://localhost:5000/uploads'
-
-// 업로드 디렉토리가 없으면 생성
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-}
-
-// 상품 이미지 저장 경로 구조: /images/{partner_id}/{product_id}/{filename}
-export const getProductImagePath = (partnerId, productId, filename) => {
-  return path.join(UPLOAD_DIR, 'images', String(partnerId), String(productId), filename)
-}
-
-// 상품 이미지 디렉토리 생성
-export const ensureProductImageDir = (partnerId, productId) => {
-  const dir = path.join(UPLOAD_DIR, 'images', String(partnerId), String(productId))
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  return dir
-}
-
-// 임시 업로드 디렉토리 (상품 생성 전)
-const TEMP_UPLOAD_DIR = path.join(UPLOAD_DIR, 'temp')
-if (!fs.existsSync(TEMP_UPLOAD_DIR)) {
-  fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true })
-}
-
-// Multer 설정 - 임시 업로드용
-const tempStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, TEMP_UPLOAD_DIR)
-  },
-  filename: (req, file, cb) => {
-    // UUID로 파일명 생성
-    const uuid = randomUUID()
-    const ext = path.extname(file.originalname)
-    cb(null, `${uuid}${ext}`)
-  }
+// S3 클라이언트 초기화
+// EKS: IRSA를 통해 자동으로 자격증명 획득
+// 온프레미스: 환경변수에서 Access Key 사용
+const s3Client = new S3Client({
+  region: AWS_REGION,
+  // IRSA 또는 환경변수 자격증명 자동 사용
 })
 
-// 파일 필터 (이미지만 허용)
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase())
-  const mimetype = allowedTypes.test(file.mimetype)
+// 이미지 파일 확장자 검증
+const ALLOWED_EXTENSIONS = /\.(jpeg|jpg|png|gif|webp)$/i
+const ALLOWED_MIME_TYPES = /^image\/(jpeg|jpg|png|gif|webp)$/i
 
-  if (mimetype && extname) {
-    return cb(null, true)
-  } else {
-    cb(new Error('이미지 파일만 업로드 가능합니다. (jpeg, jpg, png, gif, webp)'))
-  }
-}
-
-// Multer 인스턴스 생성 (임시 업로드용)
-export const upload = multer({
-  storage: tempStorage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB 제한
-  },
-  fileFilter: fileFilter
-})
-
-// 정적 파일 서빙을 위한 경로 반환
-export const getUploadPath = () => UPLOAD_DIR
-export const getFileServerUrl = () => FILE_SERVER_URL
-export const getTempUploadDir = () => TEMP_UPLOAD_DIR
-
-// 임시 파일을 최종 경로로 이동
-export const moveTempFileToProduct = (tempFilename, partnerId, productId) => {
-  const tempPath = path.join(TEMP_UPLOAD_DIR, tempFilename)
-  const ext = path.extname(tempFilename)
-  const finalFilename = `${randomUUID()}${ext}`
-  const finalDir = ensureProductImageDir(partnerId, productId)
-  const finalPath = path.join(finalDir, finalFilename)
+export const validateImageFile = (filename, mimetype) => {
+  const extname = path.extname(filename).toLowerCase()
+  const isValidExt = ALLOWED_EXTENSIONS.test(extname)
+  const isValidMime = ALLOWED_MIME_TYPES.test(mimetype)
   
-  fs.renameSync(tempPath, finalPath)
-  return finalFilename
+  if (!isValidExt || !isValidMime) {
+    throw new Error('이미지 파일만 업로드 가능합니다. (jpeg, jpg, png, gif, webp)')
+  }
+  
+  return true
 }
 
-// 이미지 URL 생성
-export const getImageUrl = (partnerId, productId, filename) => {
-  const fileServerUrl = getFileServerUrl()
-  return `${fileServerUrl}/images/${partnerId}/${productId}/${filename}`
+// S3 객체 키 생성 (경로 구조: uploads/{partner_id}/{product_id}/{uuid}.{ext})
+export const generateS3Key = (partnerId, productId, originalFilename) => {
+  const ext = path.extname(originalFilename).toLowerCase()
+  const uuid = randomUUID()
+  return `uploads/${partnerId}/${productId}/${uuid}${ext}`
 }
+
+// Presigned URL 생성 (업로드용)
+export const generatePresignedUploadUrl = async (partnerId, productId, originalFilename, contentType) => {
+  // 파일 검증
+  validateImageFile(originalFilename, contentType)
+  
+  // S3 키 생성
+  const key = generateS3Key(partnerId, productId, originalFilename)
+  
+  // Presigned URL 생성
+  const command = new PutObjectCommand({
+    Bucket: S3_BUCKET_NAME,
+    Key: key,
+    ContentType: contentType,
+    // ACL 설정하지 않음 (Bucket owner enforced 사용, s3:PutObjectAcl 권한 불필요)
+  })
+  
+  const presignedUrl = await getSignedUrl(s3Client, command, {
+    expiresIn: PRESIGNED_URL_EXPIRES_IN,
+  })
+  
+  return {
+    presignedUrl,
+    key,
+    url: `https://${CLOUDFRONT_DOMAIN}/${key}` // 최종 접근 URL (CloudFront)
+  }
+}
+
+// Presigned URL 생성 (다중 업로드용)
+export const generatePresignedUploadUrls = async (partnerId, productId, files) => {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return await generatePresignedUploadUrl(
+          partnerId,
+          productId,
+          file.originalname || file.name,
+          file.mimetype || file.type
+        )
+      } catch (error) {
+        console.error(`Error generating presigned URL for ${file.name}:`, error)
+        throw error
+      }
+    })
+  )
+  
+  return results
+}
+
+// 이미지 URL 생성 (CloudFront 도메인 사용)
+export const getImageUrl = (s3Key) => {
+  // s3Key가 이미 전체 URL인 경우 그대로 반환
+  if (s3Key.startsWith('http://') || s3Key.startsWith('https://')) {
+    return s3Key
+  }
+  
+  // CloudFront URL 생성
+  return `https://${CLOUDFRONT_DOMAIN}/${s3Key}`
+}
+
+// S3 객체 삭제
+export const deleteS3Object = async (key) => {
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: key,
+    })
+    
+    await s3Client.send(command)
+    return true
+  } catch (error) {
+    console.error(`Error deleting S3 object ${key}:`, error)
+    throw error
+  }
+}
+
+// S3 키에서 실제 파일명 추출 (UUID 부분 제거, 원본 파일명 반환은 불가능)
+export const getFilenameFromKey = (key) => {
+  return path.basename(key)
+}
+
+// 설정 정보 반환
+export const getUploadConfig = () => ({
+  bucketName: S3_BUCKET_NAME,
+  region: AWS_REGION,
+  cloudfrontDomain: CLOUDFRONT_DOMAIN,
+  presignedUrlExpiresIn: PRESIGNED_URL_EXPIRES_IN,
+})

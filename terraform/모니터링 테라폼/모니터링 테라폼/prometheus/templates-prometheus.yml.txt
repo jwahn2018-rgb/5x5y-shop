@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+
+remote_write:
+  - url: ${remote_write_url}
+
+scrape_configs:
+  - job_name: "node-exporter"
+    static_configs:
+      - targets:
+%{ for ip in node_ips ~}
+          - ${ip}:9100
+%{ endfor ~}
+
+  - job_name: "kube-state-metrics"
+    static_configs:
+      - targets:
+%{ for ip in node_ips ~}
+          - ${ip}:${ksm_nodeport}
+%{ endfor ~}

@@ -1,10 +1,10 @@
-import pool from '../config/database.js'
+import { readPool, writePool, getPool, isReadQuery } from '../config/database.js'
 
 export const getRandomProducts = async (req, res) => {
   try {
     // 데이터베이스 연결 테스트
     try {
-      await pool.execute('SELECT 1')
+      await readPool.execute('SELECT 1')
     } catch (dbError) {
       console.error('Database connection error:', dbError)
       return res.status(500).json({ 
@@ -13,7 +13,7 @@ export const getRandomProducts = async (req, res) => {
       })
     }
     
-    const [products] = await pool.execute(`
+    const [products] = await readPool.execute(`
       SELECT 
         p.id,
         p.name,
@@ -47,7 +47,7 @@ export const getProductById = async (req, res) => {
   try {
     const { id } = req.params
     
-    const [products] = await pool.execute(`
+    const [products] = await readPool.execute(`
       SELECT 
         p.*,
         c.name as category_name,
@@ -66,7 +66,7 @@ export const getProductById = async (req, res) => {
     const product = products[0]
     
     // 상품 이미지 가져오기
-    const [images] = await pool.execute(`
+    const [images] = await readPool.execute(`
       SELECT image_url, display_order, is_primary
       FROM product_images
       WHERE product_id = ?
@@ -90,7 +90,7 @@ export const searchProducts = async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' })
     }
     
-    const [products] = await pool.execute(`
+    const [products] = await readPool.execute(`
       SELECT 
         p.id,
         p.name,
@@ -115,7 +115,7 @@ export const getProductsByCategory = async (req, res) => {
   try {
     const { slug } = req.params
     
-    const [products] = await pool.execute(`
+    const [products] = await readPool.execute(`
       SELECT 
         p.id,
         p.name,

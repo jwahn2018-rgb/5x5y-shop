@@ -1,11 +1,12 @@
-import pool from '../config/database.js'
-import { finalizeProductImages } from './uploadController.js'
+import { readPool, writePool, getTransactionConnection } from '../config/database.js'
+import { finalizeProductImages, finalizeProductImagesWithConnection } from './uploadController.js'
+import { deleteS3Object } from '../config/upload.js'
 
 // 파트너사의 상품 목록 조회
 export const getPartnerProducts = async (req, res) => {
   try {
     // 먼저 user_id로 partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -16,7 +17,7 @@ export const getPartnerProducts = async (req, res) => {
     
     const partnerId = partners[0].id
     
-    const [products] = await pool.execute(`
+    const [products] = await readPool.execute(`
       SELECT 
         p.*,
         c.name as category_name,
@@ -42,7 +43,7 @@ export const createProduct = async (req, res) => {
     const { name, description, price, discount_price, stock, category_id, status, images } = req.body
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -53,7 +54,7 @@ export const createProduct = async (req, res) => {
     
     const partnerId = partners[0].id
     
-    const connection = await pool.getConnection()
+    const connection = await getTransactionConnection()
     await connection.beginTransaction()
     
     try {
@@ -65,24 +66,19 @@ export const createProduct = async (req, res) => {
       
       const productId = result.insertId
       
-      // 이미지 처리: 임시 파일을 최종 경로로 이동하고 DB에 저장
+      // 이미지 처리: S3 키를 받아서 DB에 저장
       if (images && images.length > 0) {
-        // tempFilename 배열 추출
-        const tempFilenames = images
-          .map(img => img.tempFilename)
-          .filter(filename => filename) // null/undefined 제거
+        // S3 키 배열 추출 (프론트엔드에서 업로드 완료 후 전달)
+        const s3Keys = images
+          .map(img => img.key || img.s3Key)
+          .filter(key => key) // null/undefined 제거
         
-        if (tempFilenames.length > 0) {
-          // 임시 파일을 최종 경로로 이동
-          const imageUrls = await finalizeProductImages(partnerId, productId, tempFilenames)
+        if (s3Keys.length > 0) {
+          // S3 키를 이미지 URL로 변환하고 DB에 저장 (기존 트랜잭션 사용)
+          const imageUrls = await finalizeProductImagesWithConnection(connection, partnerId, productId, s3Keys)
           
-          // DB에 이미지 URL 저장
-          for (let i = 0; i < imageUrls.length; i++) {
-            await connection.execute(`
-              INSERT INTO product_images (product_id, image_url, display_order, is_primary)
-              VALUES (?, ?, ?, ?)
-            `, [productId, imageUrls[i], i, i === 0])
-          }
+          // 결과 로그
+          console.log(`Product images saved: ${imageUrls.length} images`)
         }
       }
       
@@ -111,7 +107,7 @@ export const updateProduct = async (req, res) => {
     const { name, description, price, discount_price, stock, category_id, status, images } = req.body
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -123,7 +119,7 @@ export const updateProduct = async (req, res) => {
     const partnerId = partners[0].id
     
     // 상품 소유권 확인
-    const [products] = await pool.execute(
+    const [products] = await readPool.execute(
       'SELECT id FROM products WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
@@ -132,7 +128,7 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ error: 'Product not found' })
     }
     
-    const connection = await pool.getConnection()
+    const connection = await getTransactionConnection()
     await connection.beginTransaction()
     
     try {
@@ -143,33 +139,65 @@ export const updateProduct = async (req, res) => {
         WHERE id = ? AND partner_id = ?
       `, [name, description, price, discount_price || null, stock, category_id, status, id, partnerId])
       
-      // 기존 이미지 삭제 후 새로 추가
+      // 이미지 처리
       if (images) {
+        // 1. 기존 이미지 정보 가져오기 (삭제 전 S3 키 추출용)
+        const [existingImagesInDb] = await readPool.execute(
+          'SELECT id, image_url FROM product_images WHERE product_id = ?',
+          [id]
+        )
+        
+        // 2. 새로 업로드된 이미지와 기존 이미지 분리
+        // 새 이미지: S3 키가 있는 경우
+        const newImages = images.filter(img => img.key || img.s3Key)
+        // 유지할 기존 이미지: URL만 있는 경우 (이미 DB에 저장됨)
+        const keepImageUrls = images
+          .filter(img => img.url && !img.key && !img.s3Key)
+          .map(img => img.url)
+        
+        // 3. 삭제할 이미지 찾기 (기존 DB에 있지만 새 배열에 없는 것)
+        const imagesToDelete = existingImagesInDb.filter(
+          img => !keepImageUrls.includes(img.image_url)
+        )
+        
+        // 4. 삭제할 이미지의 S3 객체 삭제
+        const cloudfrontDomain = process.env.CLOUDFRONT_DOMAIN || 'img.usinsa.minn.my'
+        for (const imgToDelete of imagesToDelete) {
+          try {
+            const url = imgToDelete.image_url
+            if (url.includes(cloudfrontDomain)) {
+              const key = url.replace(`https://${cloudfrontDomain}/`, '')
+              await deleteS3Object(key)
+            }
+          } catch (error) {
+            console.error(`Failed to delete S3 object for ${imgToDelete.image_url}:`, error)
+            // S3 삭제 실패해도 계속 진행
+          }
+        }
+        
+        // 5. 기존 이미지 삭제 (DB에서)
         await connection.execute(
           'DELETE FROM product_images WHERE product_id = ?',
           [id]
         )
         
-        // 새로 업로드된 이미지와 기존 이미지 분리
-        const newImages = images.filter(img => img.tempFilename)
-        const existingImages = images.filter(img => img.url && !img.tempFilename)
-        
-        // 새 이미지 처리: 임시 파일을 최종 경로로 이동
+        // 6. 새 이미지 처리: S3 키를 이미지 URL로 변환하고 DB에 저장
         if (newImages.length > 0) {
-          const tempFilenames = newImages.map(img => img.tempFilename)
-          const newImageUrls = await finalizeProductImages(partnerId, id, tempFilenames)
-          
-          // 새 이미지 URL을 기존 이미지 배열에 추가
-          existingImages.push(...newImageUrls.map(url => ({ url })))
+          const s3Keys = newImages.map(img => img.key || img.s3Key)
+          await finalizeProductImagesWithConnection(connection, partnerId, id, s3Keys)
         }
         
-        // 모든 이미지 DB에 저장
-        for (let i = 0; i < existingImages.length; i++) {
-          const image = existingImages[i]
+        // 7. 유지할 기존 이미지 재저장 (display_order 포함)
+        // 전체 순서: 새 이미지 + 유지할 기존 이미지
+        // is_primary: 새 이미지가 없고 첫 번째 기존 이미지인 경우에만 true
+        let displayOrder = newImages.length
+        for (let i = 0; i < keepImageUrls.length; i++) {
+          const imageUrl = keepImageUrls[i]
+          const isPrimary = (newImages.length === 0 && i === 0) // 새 이미지가 없고 첫 번째 기존 이미지
           await connection.execute(`
             INSERT INTO product_images (product_id, image_url, display_order, is_primary)
             VALUES (?, ?, ?, ?)
-          `, [id, image.url, i, i === 0])
+          `, [id, imageUrl, displayOrder + i, isPrimary])
         }
       }
       
@@ -194,7 +222,7 @@ export const deleteProduct = async (req, res) => {
     const { id } = req.params
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -206,7 +234,7 @@ export const deleteProduct = async (req, res) => {
     const partnerId = partners[0].id
     
     // 상품 소유권 확인
-    const [products] = await pool.execute(
+    const [products] = await readPool.execute(
       'SELECT id FROM products WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
@@ -215,10 +243,40 @@ export const deleteProduct = async (req, res) => {
       return res.status(404).json({ error: 'Product not found' })
     }
     
-    await pool.execute(
+    // 상품 이미지 S3 키 가져오기 (삭제 전)
+    const [productImages] = await readPool.execute(
+      'SELECT image_url FROM product_images WHERE product_id = ?',
+      [id]
+    )
+    
+    // 상품 삭제 (CASCADE로 이미지도 자동 삭제됨)
+    await writePool.execute(
       'DELETE FROM products WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
+    
+    // S3 이미지 삭제 (비동기, 실패해도 무시)
+    if (productImages.length > 0) {
+      const cloudfrontDomain = process.env.CLOUDFRONT_DOMAIN || 'img.usinsa.minn.my'
+      
+      // Promise.all을 사용하여 모든 S3 삭제 작업을 기다림
+      const deletePromises = productImages.map(async (img) => {
+        try {
+          // image_url에서 S3 키 추출 (CloudFront URL에서 키 추출)
+          const url = img.image_url
+          if (url.includes(cloudfrontDomain)) {
+            const key = url.replace(`https://${cloudfrontDomain}/`, '')
+            await deleteS3Object(key)
+          }
+        } catch (error) {
+          console.error(`Failed to delete S3 object for ${img.image_url}:`, error)
+          // S3 삭제 실패해도 상품 삭제는 성공으로 처리
+        }
+      })
+      
+      // 모든 S3 삭제 작업 완료 대기 (실패해도 상품 삭제는 성공)
+      await Promise.allSettled(deletePromises)
+    }
     
     res.json({ message: 'Product deleted successfully' })
   } catch (error) {
@@ -231,7 +289,7 @@ export const deleteProduct = async (req, res) => {
 export const getPartnerCoupons = async (req, res) => {
   try {
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -242,7 +300,7 @@ export const getPartnerCoupons = async (req, res) => {
     
     const partnerId = partners[0].id
     
-    const [coupons] = await pool.execute(`
+    const [coupons] = await readPool.execute(`
       SELECT * FROM coupons 
       WHERE partner_id = ?
       ORDER BY created_at DESC
@@ -261,7 +319,7 @@ export const createCoupon = async (req, res) => {
     const { name, description, discount_type, discount_value, min_purchase_amount, max_discount_amount, valid_from, valid_until, usage_limit } = req.body
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -272,7 +330,7 @@ export const createCoupon = async (req, res) => {
     
     const partnerId = partners[0].id
     
-    const [result] = await pool.execute(`
+      const [result] = await writePool.execute(`
       INSERT INTO coupons (
         partner_id, name, description, discount_type, discount_value,
         min_purchase_amount, max_discount_amount, valid_from, valid_until, usage_limit, status
@@ -301,7 +359,7 @@ export const updateCoupon = async (req, res) => {
     const { name, description, discount_type, discount_value, min_purchase_amount, max_discount_amount, valid_from, valid_until, usage_limit, status } = req.body
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -313,7 +371,7 @@ export const updateCoupon = async (req, res) => {
     const partnerId = partners[0].id
     
     // 쿠폰 소유권 확인
-    const [coupons] = await pool.execute(
+    const [coupons] = await readPool.execute(
       'SELECT id FROM coupons WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
@@ -322,7 +380,7 @@ export const updateCoupon = async (req, res) => {
       return res.status(404).json({ error: 'Coupon not found' })
     }
     
-    await pool.execute(`
+    await writePool.execute(`
       UPDATE coupons 
       SET name = ?, description = ?, discount_type = ?, discount_value = ?,
           min_purchase_amount = ?, max_discount_amount = ?, valid_from = ?, valid_until = ?,
@@ -348,7 +406,7 @@ export const deleteCoupon = async (req, res) => {
     const { id } = req.params
     
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -360,7 +418,7 @@ export const deleteCoupon = async (req, res) => {
     const partnerId = partners[0].id
     
     // 쿠폰 소유권 확인
-    const [coupons] = await pool.execute(
+    const [coupons] = await readPool.execute(
       'SELECT id FROM coupons WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
@@ -369,7 +427,7 @@ export const deleteCoupon = async (req, res) => {
       return res.status(404).json({ error: 'Coupon not found' })
     }
     
-    await pool.execute(
+    await writePool.execute(
       'DELETE FROM coupons WHERE id = ? AND partner_id = ?',
       [id, partnerId]
     )
@@ -385,7 +443,7 @@ export const deleteCoupon = async (req, res) => {
 export const getPartnerOrders = async (req, res) => {
   try {
     // partner_id 찾기
-    const [partners] = await pool.execute(
+    const [partners] = await readPool.execute(
       'SELECT id FROM partners WHERE user_id = ?',
       [req.user.id]
     )
@@ -396,7 +454,7 @@ export const getPartnerOrders = async (req, res) => {
     
     const partnerId = partners[0].id
     
-    const [orders] = await pool.execute(`
+    const [orders] = await readPool.execute(`
       SELECT DISTINCT
         o.*,
         u.name as customer_name,

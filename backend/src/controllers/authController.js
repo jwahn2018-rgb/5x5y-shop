@@ -1,4 +1,4 @@
-import pool from '../config/database.js'
+import { readPool, writePool, getTransactionConnection } from '../config/database.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
@@ -7,7 +7,7 @@ export const register = async (req, res) => {
     const { email, password, name, phone, role, companyName, businessNumber } = req.body
     
     // 이메일 중복 확인
-    const [existing] = await pool.execute(
+    const [existing] = await readPool.execute(
       'SELECT id FROM users WHERE email = ?',
       [email]
     )
@@ -23,7 +23,7 @@ export const register = async (req, res) => {
     const userRole = role === 'partner' ? 'partner' : 'user'
     
     // 트랜잭션 시작
-    const connection = await pool.getConnection()
+    const connection = await getTransactionConnection()
     await connection.beginTransaction()
     
     try {
@@ -76,7 +76,7 @@ export const login = async (req, res) => {
     }
     
     // 사용자 찾기
-    const [users] = await pool.execute(
+    const [users] = await readPool.execute(
       'SELECT * FROM users WHERE email = ?',
       [email]
     )
